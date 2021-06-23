@@ -14,7 +14,7 @@ namespace CommunicationProtocol
         static string com_port = "COM3";
 
         static int data_size = 500;
-        static string data_folder = @"D:\ROBOTS\__ПРОЕКТЫ_В_РАБОТЕ\data_gloves_v1\Raw_imu_data";
+        static string data_folder = System.IO.Directory.GetCurrentDirectory() + "\\raw_calib_data";
         static int timeout = 10;
 
         
@@ -67,6 +67,10 @@ namespace CommunicationProtocol
         static void Collect_Gyro_Accel_Calibration_Data(ArduinoController controller)
         {
             byte sides = 6;
+
+            controller.Wait(timeout, string.Format("Зафиксируйте датчик на стороне {0}/{1}", 1, sides));
+            Console.Beep();
+
             for (byte side_itr = 1; side_itr <= sides; ++side_itr)
             {
                 Collect_IMU_raw_data(controller, side_itr, "gyro_accel");
@@ -79,57 +83,6 @@ namespace CommunicationProtocol
             }
         }
 
-        static void Collect_Gyro_Accel_Calibration_Data_v0(ArduinoController controller)
-        {
-            byte sides = 6;
-            for (byte side_itr = 1; side_itr <= sides; ++side_itr)
-            {
-                var csv_files = new Dictionary<int, StringBuilder>();
-                for (byte i = 0; i < imu_total; ++i)
-                {
-                    StringBuilder csv_file = new StringBuilder();
-                    csv_file.AppendLine("imu,time,ax,ay,az,gx,gy,gz,mx,my,mz");
-                    csv_files.Add(i, csv_file);
-                }
-
-                int data_counter = 0;
-                while (true)
-                {
-                    if (controller.ReadRawData(out Dictionary<int, RawData> data, out UInt32 time, out ulong package) > 0)
-                    {
-                        data_counter++;
-                        Console.Write("\rReceived data: {0}", data_counter);
-
-                        foreach (var csv_pair in csv_files)
-                        {
-                            var imu_id = csv_pair.Key;
-                            var csv_file = csv_pair.Value;
-                            AddRawDataInFile(imu_id, data[imu_id], csv_file);
-                        }
-
-                        if (data_counter >= data_size)
-                        {
-                            Console.WriteLine();
-                            foreach (var csv_pair in csv_files)
-                            {
-                                var imu_id = csv_pair.Key;
-                                var csv_file = csv_pair.Value;
-                                string path = string.Format("{0}\\gyro_accel-{1}-{2}.csv", data_folder, imu_id, side_itr);
-                                System.IO.File.WriteAllText(path, csv_file.ToString());
-                            }
-                            break;
-                        }
-                    }
-                }
-
-                if (side_itr != sides)
-                {
-                    controller.Wait(timeout, string.Format("Переверните датчик на строну {0}/{1}", side_itr + 1, sides));
-                    Console.Beep();
-                }
-            }
-        }
-        
         static void AddRawDataInFile(int imu, RawData row, StringBuilder file)
         {
             var newLine = string.Format("{0},{1},{2},{3},{4},{5},{6},{7},{8},{9},{10}",
@@ -140,8 +93,17 @@ namespace CommunicationProtocol
             file.AppendLine(newLine);
         }
 
+        static void PrintAttentionMessage(string message)
+        {
+            var default_color = Console.ForegroundColor;
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine(message);
+            Console.ForegroundColor = default_color;
+        }
+
         static void Collect_calibration_data()
         {
+            var default_color = Console.ForegroundColor;
 
             var controller = new ArduinoController(imu_total);
             if (controller.Connect(com_port, baud_rate) < 0)
@@ -161,18 +123,24 @@ namespace CommunicationProtocol
             var motionProc = new MotionProcessor(AccelRange.ACCEL_RANGE_16G, GyroRange.GYRO_RANGE_2000DPS);
 
             Console.WriteLine("\nCollection gyroscope and accelerometr data:");
-            Console.WriteLine("Attention: IMU sensor must be hard fixed on each of 6 side!!!");
+            PrintAttentionMessage("Attention: IMU sensor must be hard fixed on each of 6 side!!!");
             Collect_Gyro_Accel_Calibration_Data(controller);
 
             Console.WriteLine("\nCollection magnitometr data:");
-            Console.WriteLine("Attention: IMU sensor must be randomly rotated!!!");
+            PrintAttentionMessage("Attention: IMU sensor must be randomly rotated!!!");
             Collect_Magnetometr_Calibration_Data(controller);
-        }
 
+            Console.WriteLine("\nCalibration data was written to path:");
+            Console.WriteLine(data_folder);
+        }
 
         static void Main(string[] args)
         {
+            System.IO.DirectoryInfo di = System.IO.Directory.CreateDirectory(data_folder);
+
             Collect_calibration_data();
+
+            Console.ReadKey();
         }
     }
 }
